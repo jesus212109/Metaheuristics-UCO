@@ -7,6 +7,9 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import cross_val_score
 from sklearn.model_selection import train_test_split
 from pathlib import Path
+#TODO:
+#- Implement the Genetic Algorithm for hyperparameter optimization of the Random Forest Classifier.
+#- Define the gene space for each hyperparameter, ensuring that the values are within reasonable ranges based on the Random Forest's characteristics.
 
 
 def generate_random_params():
@@ -216,9 +219,74 @@ def mutate(child, mutation_rate, gene_space):
             elif gene_type=='float':
                 child[index] = random.uniform(min_val, max_val)
     return child
-            
 
-if name == "main":
+def genetic_algorithm(pop_size=20, generations=50, crossover_rate=0.8, mutation_rate=0.1):
+
+    """
+    Main function to run the Genetic Algorithm for hyperparameter optimization.
+    
+    Args:
+        pop_size (int): Number of individuals in the population.
+        generations (int): Number of generations to evolve.
+        crossover_rate (float): Probability of crossover between parents.
+        mutation_rate (float): Probability of mutation for each gene.
+    Returns:
+        tuple: Best hyperparameters found and their corresponding fitness score.
+    """
+
+    # 1. Define the gene space for each hyperparameter
+    gene_space = [
+        {'min': 10, 'max': 300, 'type': 'int'},          # n_estimators
+        {'min': 2, 'max': 30, 'type': 'int'},           # max_depth
+        {'min': 2, 'max': 20, 'type': 'int'},           # min_samples_split
+        {'min': 1, 'max': 20, 'type': 'int'},           # min_samples_leaf
+        {'min': 0.1, 'max': 1.0, 'type': 'float'},      # max_features
+        {'min': 0, 'max': 1, 'type': 'int'},            # bootstrap (binary)
+        {'min': 0, 'max': 1, 'type': 'int'},            # criterion (binary)
+        {'min': 0, 'max': 1, 'type': 'int'},            # class_weight (binary)
+        {'min': 10, 'max': 200, 'type': 'int'},         # max_leaf_nodes
+        {'min': 0.0, 'max': 0.1, 'type': 'float'}      # min_impurity_decrease
+    ]
+    
+    # 2. Initialize the population with random individuals
+    population = init_population(pop_size)
+    
+    best_individual = None
+    best_fitness = None
+    
+    for generation in range(generations):
+        print(f"Generation {generation+1}/{generations}")
+        
+        # 3. Evaluate the fitness of the current population
+        fitness_scores = evaluate_population(population)
+        
+        # Update the best solution found so far
+        for i in range(len(population)):
+            if best_fitness is None or fitness_scores[i] > best_fitness:
+                best_fitness = fitness_scores[i]
+                best_individual = population[i].copy()
+        
+        new_population = []
+        
+        while len(new_population) < pop_size:
+            # 4. Select parents using tournament selection
+            parent1 = tournament_selection(population, fitness_scores)
+            parent2 = tournament_selection(population, fitness_scores)
+            # 5. Perform crossover to produce offspring
+            child1, child2 = crossover_two_point(parent1, parent2, crossover_rate)
+            # 6. Mutate the offspring            
+            child1 = mutate(child1, mutation_rate, gene_space)
+            child2 = mutate(child2, mutation_rate, gene_space)
+            # 7. Add the new children to the next generation
+            new_population.append(child1)
+            if len(new_population) < pop_size:
+                new_population.append(child2)
+            # 8. Replace the old population with the new one
+            population = new_population      
+    return best_individual, best_fitness  
+
+if __name__ == "__main__":
+
     # Obtain the current directory of the script to build the path to the dataset
     current_dir = Path(__file__).resolve().parent
 
@@ -235,3 +303,5 @@ if name == "main":
     best_grid_parameters, best_grid_score = gridSearch()
     print("Best parameters from Random Search:", best_random_parameters, "with accuracy:", best_random_score)
     print("Best parameters from Grid Search:", best_grid_parameters, "with accuracy:", best_grid_score)
+    best_ga_parameters, best_ga_score = genetic_algorithm()
+    print("Best parameters from Genetic Algorithm:", best_ga_parameters, "with accuracy:", best_ga_score)
