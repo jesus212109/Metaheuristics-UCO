@@ -220,7 +220,7 @@ def mutate(child, mutation_rate, gene_space):
                 child[index] = random.uniform(min_val, max_val)
     return child
 
-def genetic_algorithm(pop_size=20, generations=50, crossover_rate=0.8, mutation_rate=0.1):
+def genetic_algorithm(pop_size=20, generations=50, elite_size=5):
 
     """
     Main function to run the Genetic Algorithm for hyperparameter optimization.
@@ -228,8 +228,7 @@ def genetic_algorithm(pop_size=20, generations=50, crossover_rate=0.8, mutation_
     Args:
         pop_size (int): Number of individuals in the population.
         generations (int): Number of generations to evolve.
-        crossover_rate (float): Probability of crossover between parents.
-        mutation_rate (float): Probability of mutation for each gene.
+        elite_size (int): Number of top individuals to preserve in each generation.
     Returns:
         tuple: Best hyperparameters found and their corresponding fitness score.
     """
@@ -254,35 +253,77 @@ def genetic_algorithm(pop_size=20, generations=50, crossover_rate=0.8, mutation_
     best_individual = None
     best_fitness = None
     
+    # Adaptive parameters tracking
+    Pc = 0.5
+    Pm = 0.5
+    delta = 0.05
+    stagnation_limit = 5
+    stagnation_count = 0
+    epsilon = 0.001
+    prev_elite_mean = 0.0
+    
     for generation in range(generations):
-        print(f"Generation {generation+1}/{generations}")
+        print(f"Generation {generation+1}/{generations} | Pc: {Pc:.2f} | Pm: {Pm:.2f}")
         
         # 3. Evaluate the fitness of the current population
         fitness_scores = evaluate_population(population)
         
-        # Update the best solution found so far
-        for i in range(len(population)):
-            if best_fitness is None or fitness_scores[i] > best_fitness:
-                best_fitness = fitness_scores[i]
-                best_individual = population[i].copy()
+        # Sort population by fitness to identify the elite
+        pop_with_fitness = list(zip(population, fitness_scores))
+        pop_with_fitness.sort(key=lambda x: x[1], reverse=True)
         
-        new_population = []
+        elite = [ind.copy() for ind, fit in pop_with_fitness[:elite_size]]
+        elite_fitness = [fit for ind, fit in pop_with_fitness[:elite_size]]
+        
+        # Calculate mean fitness of the elite to evaluate stagnation
+        current_elite_mean = sum(elite_fitness) / len(elite_fitness)
+        
+        if generation > 0:
+            if current_elite_mean <= prev_elite_mean + epsilon:
+                stagnation_count += 1
+            else:
+                # Improvement detected: favor exploitation by increasing Pc
+                stagnation_count = 0
+                Pc = min(0.9, Pc + delta)
+                Pm = round(1.0 - Pc, 2)
+                
+        if stagnation_count >= stagnation_limit:
+            # Stagnation detected: favor exploration by increasing Pm
+            Pm = min(0.9, Pm + delta)
+            Pc = round(1.0 - Pm, 2)
+            stagnation_count = 0
+            
+        prev_elite_mean = current_elite_mean
+        
+        # Update the best solution found so far (global)
+        best_of_gen = elite[0]
+        fitness_of_gen = elite_fitness[0]
+        
+        if best_fitness is None or fitness_of_gen > best_fitness:
+            best_fitness = fitness_of_gen
+            best_individual = best_of_gen.copy()
+        
+        # The new population starts with the elite to guarantee their survival (Elitism)
+        new_population = elite.copy()
         
         while len(new_population) < pop_size:
             # 4. Select parents using tournament selection
             parent1 = tournament_selection(population, fitness_scores)
             parent2 = tournament_selection(population, fitness_scores)
             # 5. Perform crossover to produce offspring
-            child1, child2 = crossover_two_point(parent1, parent2, crossover_rate)
+            child1, child2 = crossover_two_point(parent1, parent2, Pc)
             # 6. Mutate the offspring            
-            child1 = mutate(child1, mutation_rate, gene_space)
-            child2 = mutate(child2, mutation_rate, gene_space)
+            child1 = mutate(child1, Pm, gene_space)
+            child2 = mutate(child2, Pm, gene_space)
             # 7. Add the new children to the next generation
             if len(new_population) < pop_size:
                 new_population.append(child1)
+            if len(new_population) < pop_size:
                 new_population.append(child2)
+                
         # 8. Replace the old population with the new one
         population = new_population      
+        
     return best_individual, best_fitness  
 
 if __name__ == "__main__":
