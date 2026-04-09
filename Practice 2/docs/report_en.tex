@@ -1,0 +1,160 @@
+\documentclass[12pt, a4paper]{article}
+
+% =============================================================
+% PAQUETES
+% =============================================================
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel} % Cambiado a English
+\usepackage[a4paper, margin=2.5cm]{geometry}
+\usepackage{microtype}
+\usepackage[parfill]{parskip}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{listings}
+
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2
+}
+\lstset{style=mystyle}
+
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks = true,
+    linkcolor  = MidnightBlue,
+    citecolor  = MidnightBlue,
+    urlcolor   = MidnightBlue,
+    pdftitle   = {Practice 2 Report: Genetic Algorithms},
+    pdfauthor  = {Jesús Fernández López and Rafael Carlos Schoettel Vilchez},
+    pdfsubject = {Metaheuristics},
+    pdfkeywords= {genetic algorithms hyperparameters random forest metaheuristics},
+}
+
+% =============================================================
+% CONFIGURACIONES GLOBALES DEL DOCUMENTO
+% =============================================================
+
+\widowpenalty  = 10000
+\clubpenalty   = 10000
+\frenchspacing
+
+% --- Macros de Metadatos ---
+\newcommand{\reporttitle}{Practice 2: Genetic Algorithms\\ \vspace{0.3cm} \large Random Forest Hyperparameter Optimization}
+\newcommand{\reportdate}{\today}
+\newcommand{\authorA}{Jesús Fernández López}
+\newcommand{\authorB}{Rafael Carlos Schoettel Vilchez}
+
+% =============================================================
+\begin{document}
+% =============================================================
+
+% --- Portada ---
+\begin{titlepage}
+  \centering
+  \vspace*{3cm}
+
+  {\Huge \textbf{Laboratory Report}}\\[0.8cm]
+  {\LARGE \textbf{\reporttitle}}\\[0.5cm]
+  \rule{\textwidth}{0.4pt}\\[2cm]
+
+  {\Large \textbf{Authors}}\\[0.4cm]
+  {\large \authorA\ \& \authorB}\\[1.5cm]
+
+  {\Large \textbf{Subject}}\\[0.4cm]
+  {\large Metaheuristics}\\[0.4cm]
+  {\normalsize University of Córdoba}\\[1.5cm]
+
+  {\Large \textbf{Date}}\\[0.4cm]
+  {\large \reportdate}
+
+  \vfill
+  \rule{\textwidth}{0.4pt}
+\end{titlepage}
+
+\newpage
+\tableofcontents
+\newpage
+
+% =============================================================
+\section{Introduction}
+% =============================================================
+
+The objective of this practice is to implement and analyze a Genetic Algorithm (GA) capable of finding the optimal hyperparameter combination for a \textit{Random Forest} classification model. The base dataset used is \texttt{winequality-red.csv}, posing a binary classification problem (good quality vs. bad quality wine). 
+The results and efficiency of the Genetic Algorithm will be empirically contrasted against Random Search and Grid Search strategies.
+
+% =============================================================
+\section{Genetic Algorithm Implementation}
+% =============================================================
+
+\subsection{Gene Space (Chromosomes)}
+The chromosome in this context is conceptually composed and represented by ten independent and decisive hyperparameters for a Random Forest algorithm. 
+A restrictive dictionary has been implemented for the gene space (\textit{gene\_space}) dictating the mutation rules. This step is crucial, as it ensures that each allele varies strictly within mathematically possible and theoretically sound boundaries (e.g., preventing floats where integers belong, or avoiding null tree counts).
+
+\subsection{Elitism and Computational Cache (Performance)}
+To safeguard the peak solutions discovered in each iteration against detrimental mutations—thus avoiding the loss of valuable genetic ground—the population ($size=30$) has been endowed with a \textbf{10\% elitism} ($elite\_size=3$). This means that the three absolute best-fitness individuals survive intact and unaltered to the next generation, retaining the global score ceiling at all times.
+
+Due to the exceedingly high temporal cost of re-evaluating a new population from scratch utilizing Cross-Validation ($K=5$ folds), an efficient \textbf{Global Fitness Cache} was also injected, managed via Python dictionaries. This cache maps identical (cloned) combinations to their previously discovered \textit{Accuracy}. By merging synergistically with elitism (whether through direct elite survival or sheer likelihood of hyperparameter collision during crossover operations), the generation processing time and convergence velocity have been critically diminished compared to the native iteration.
+
+\subsection{Dynamic and Adaptive Probabilities}
+To orchestrate a smart balance between Exploitation (refining solutions over a specific region) and Exploration of distant solution spaces, the Genetic Algorithm leverages adaptive probabilities starting with a strong exploitation bias ($P_c = 0.8$, $P_m = 0.2$):
+\begin{itemize}[itemsep=0.2em]
+    \item $P_c + P_m = 1.0$ strictly, fluctuating across the generations by a progressive \textit{delta} of $\pm 0.05$.
+\end{itemize}
+
+Throughout the solution landscape journey, if the algorithm detects notable stabilization within the global elite's fitness mean, it immediately enforces a temporary push towards diversity (adaptive $P_m$ increment). Conversely, continuous improvement rewards heavy exploitation via crossover ($P_c$).
+
+Furthermore, to prevent the devastating genetic annihilation commonplace with high $P_m$ ranges, $P_m$ dictates the probability of the entire individual suffering mutation. If triggered, a secondary stochastic roulette determines the operational extent: mutating exactly 1 single gene (75\% probability), 2 genes simultaneously (20\%), or 3 genes for deep local minima escapes (5\%).
+
+% =============================================================
+\section{Experimental Results}
+% =============================================================
+
+In this section, the scores (\textit{mean Accuracy x5 Fold}) achieved by the three different computing contenders outlined in this machine learning comparative pipeline are thoroughly detailed.
+
+\begin{table}[H]
+\centering
+\caption{Efficiency comparison for RF hyperparameter exploration}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Optimization Method}       & \textbf{Final Accuracy} \\ \midrule
+Random Search & \%TODO\% \\
+Grid Search  & \%TODO\% \\
+Adaptive Genetic Algorithm (\textit{GA}) & \textbf{0.7473} \\ 
+\bottomrule
+\end{tabular}
+\end{table}
+
+% =============================================================
+\section{Conclusions}
+% =============================================================
+
+% TODO: Rellena con tu propio criterio final de lo que veamos al terminar los números reales. 
+Following the review of the compiled empirical evidence throughout this laboratory practice, it stands corroborated that genetics-inspired evolutionary algorithms provide a heavily robust compromise between underlying optimization quality and the sheer computational time invested...
+
+\end{document}

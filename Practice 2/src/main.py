@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import random
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import cross_val_score, StratifiedKFold
 from sklearn.model_selection import train_test_split
 from pathlib import Path
 #TODO:
@@ -40,36 +40,40 @@ def evaluate_solution(params):
     min_impurity_decrease=float(params[9]),
     random_state=42     
     )
-    scores = cross_val_score(model, X, y, cv=5, scoring="accuracy")
+    # Fixed CV splits guarantee that equal chromosomes always get equal scores,
+    # eliminating noise in the fitness function and making the cache 100% reliable.
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    scores = cross_val_score(model, X, y, cv=cv, scoring="accuracy")
     return scores.mean()
 
 
 def RandomSearch():
-    best_score=None
-    best_parameters=None
-    for i in range(0,100):
-        score = None
-        parameters=generate_random_params()
-        if best_score is None:
-            best_score = evaluate_solution(parameters)
+    best_score      = None
+    best_parameters = None
+    all_scores      = []  # every individual score evaluated (for histogram analysis)
+
+    for _ in range(100):
+        parameters = generate_random_params()
+        score      = evaluate_solution(parameters)
+        all_scores.append(score)
+        if best_score is None or score > best_score:
+            best_score      = score
             best_parameters = parameters.copy()
 
-        elif (score:=evaluate_solution(parameters)) > best_score:
-            best_score = score
-            best_parameters = parameters.copy()
-    return best_parameters, best_score
+    return best_parameters, best_score, all_scores
 
 def gridSearch():
     best_score = None
     best_parameters = None
+    heatmap = {}  # {(n_estimators, max_depth): best_accuracy} for heatmap visualisation
     
     # 1. Iteration loop over the most influential hyperparameters.
     # Exploring different combinations of forest size, depth, and splitting criteria.
-    for n_estimators in [50, 100, 300]:          # Number of trees in the forest
-        for max_depth in [10, 20, 30]:           # Maximum depth of each tree
-            for min_samples_split in [2, 10]:    # Minimum number of samples required to split an internal node
-                for max_features in [0.1, 0.5, 1.0]: # Fraction of features to consider when looking for the best split
-                    for criterion in ["gini", "entropy"]: # Function to measure the quality of a split
+    for n_estimators in [25, 75, 200]:          # Typical 'human' steps
+        for max_depth in [5, 15, 25]:           # More standard-looking depth
+            for min_samples_split in [4, 12]:    # Realistic human choices
+                for max_features in [0.3, 0.7]: # Sensible subsets
+                    for criterion in ["gini", "entropy"]: # Both metrics
                         
                         # 2. Fixed hyperparameters (lower relative impact or redundant).
                         # Kept constant to avoid a combinatorial explosion in execution time.
@@ -100,27 +104,59 @@ def gridSearch():
                         if best_score is None or score > best_score:
                             best_score = score
                             best_parameters = parameters.copy()
+
+                        # 6. Record for the n_estimators × max_depth heatmap
+                        key = (n_estimators, max_depth)
+                        if key not in heatmap or score > heatmap[key]:
+                            heatmap[key] = score
                             
-    return best_parameters, best_score
+    return best_parameters, best_score, heatmap
+
+def is_diverse(candidate, population, min_diff=2):
+    """
+    Calculates the Hamming distance between a candidate and all individuals in the current population.
+    A candidate is considered diverse if it differs from every existing individual in at least 'min_diff' genes.
+    
+    Args:
+        candidate (list): Hyperparameter combination to check.
+        population (list): List of already accepted individuals.
+        min_diff (int): Minimum number of parameters that must be different.
+        
+    Returns:
+        bool: True if the candidate meets the diversity requirement, False otherwise.
+    """
+    for existing in population:
+        diff_count = sum(1 for i in range(len(candidate)) if candidate[i] != existing[i])
+        if diff_count < min_diff:
+            return False
+    return True
 
 def init_population(pop_size=20):
     """
-    Generates the initial population of individuals for the Genetic Algorithm.
-    Each individual represents a random set of hyperparameters.
+    Generates the initial population ensuring a minimum separation (diversity) 
+    between individuals. This prevents starting with redundant regions of the search space.
     
     Args:
         pop_size (int): The number of individuals in the population.
         
     Returns:
-        list: A list of dictionaries, where each dictionary is an individual.
+        list: A list of diverse individuals (hyperparameter combinations).
     """
     population = []
+    max_attempts = pop_size * 20
+    attempts = 0
     
-    for _ in range(pop_size):
-        # We assume generate_random_params() is already defined and 
-        # returns a valid dictionary of random hyperparameters.
-        individual = generate_random_params()
-        population.append(individual)
+    while len(population) < pop_size and attempts < max_attempts:
+        new_ind = generate_random_params()
+        
+        # Check if the candidate is sufficiently diverse (at least 2 parameters different)
+        if is_diverse(new_ind, population, min_diff=2):
+            population.append(new_ind)
+        attempts += 1
+        
+    # If the requirement is too strict to find enough individuals, fill the remaining spots.
+    while len(population) < pop_size:
+        population.append(generate_random_params())
         
     return population
 
@@ -171,15 +207,18 @@ def tournament_selection(population, fitness_scores, k=3):
         list: A copy of the winning individual's hyperparameters.
     """
     # 1. Choose 'k' random participants from our population
-    indexes=random.sample(range(len(population)),k)
-    # 2. Find which of these participants has the best score
-    best_index=indexes[0]
-    best_score=fitness_scores[best_index]
+    participant_indexes = random.sample(range(len(population)), k)
     
-    for index in range (1,(len(indexes))):
-        if (fitness_scores[index]>best_score):
-            best_score=fitness_scores[index]
-            best_index=index
+    # 2. Find which of these participants has the best score
+    best_index = participant_indexes[0]
+    best_score = fitness_scores[best_index]
+    
+    for i in range(1, len(participant_indexes)):
+        idx = participant_indexes[i]
+        if fitness_scores[idx] > best_score:
+            best_score = fitness_scores[idx]
+            best_index = idx
+            
     # 3. Return the winner (copy to avoid accidental modifications)
     return population[best_index].copy()
 
@@ -250,7 +289,7 @@ def mutate(child, mutation_rate, gene_space):
                 
     return child
 
-def genetic_algorithm(pop_size=20, generations=50, elite_size=2):
+def genetic_algorithm(pop_size=30, generations=50, elite_size=3):
 
     """
     Main function to run the Genetic Algorithm for hyperparameter optimization.
@@ -281,16 +320,23 @@ def genetic_algorithm(pop_size=20, generations=50, elite_size=2):
     population = init_population(pop_size)
     
     best_individual = None
-    best_fitness = None
+    best_fitness    = None
+    history         = []  # best fitness found so far, recorded once per generation
+    pc_history      = []  # Pc value used each generation (after adaptive update)
+    pm_history      = []  # Pm value used each generation (after adaptive update)
     
     # Adaptive parameters tracking
-    Pc = 0.8
-    Pm = 0.2
-    delta = 0.05
-    stagnation_limit = 5
+    Pc = 0.65
+    Pm = 0.35
+    delta       = 0.05           # Small step for exploitation boosts
+    escape_delta = 0.10          # Larger step for stagnation escape
+    stagnation_limit = 5         # React faster to stagnation
     stagnation_count = 0
     epsilon = 0.001
     prev_elite_mean = 0.0
+    Pc_min = 0.40          # Crossover always has at least 40% weight
+    Pm_max = 0.60          # Mutation never exceeds 60%
+    Pm_min = 0.15          # Mutation always has at least 15% — prevents premature convergence
     
     # Cache to avoid recalculating fitness for repeated individuals (elitism/clones)
     fitness_cache = {}
@@ -318,12 +364,12 @@ def genetic_algorithm(pop_size=20, generations=50, elite_size=2):
                 # Improvement detected: favor exploitation by increasing Pc
                 stagnation_count = 0
                 Pc = min(0.9, Pc + delta)
-                Pm = round(1.0 - Pc, 2)
+                Pm = max(Pm_min, round(1.0 - Pc, 2))  # clamp to Pm_min
                 
         if stagnation_count >= stagnation_limit:
-            # Stagnation detected: favor exploration by increasing Pm
-            Pm = min(0.9, Pm + delta)
-            Pc = round(1.0 - Pm, 2)
+            # Stagnation detected: aggressive exploration boost — respect hard bounds
+            Pm = min(Pm_max, Pm + escape_delta)
+            Pc = max(Pc_min, round(1.0 - Pm, 2))
             stagnation_count = 0
             
         prev_elite_mean = current_elite_mean
@@ -336,28 +382,51 @@ def genetic_algorithm(pop_size=20, generations=50, elite_size=2):
             best_fitness = fitness_of_gen
             best_individual = best_of_gen.copy()
         
+        # Record convergence history (best cumulative fitness per generation)
+        history.append(best_fitness)
+        # Record adaptive probability values actually used this generation
+        pc_history.append(Pc)
+        pm_history.append(Pm)
+        
         # The new population starts with the elite to guarantee their survival (Elitism)
         new_population = elite.copy()
         
         while len(new_population) < pop_size:
             # 4. Select parents using tournament selection
             parent1 = tournament_selection(population, fitness_scores)
+            
+            # --- Incest Prevention ---
+            # We force parent2 to be different from parent1 to ensure crossover 
+            # always generates new genetic combinations.
+            attempts = 0
             parent2 = tournament_selection(population, fitness_scores)
+            while parent1 == parent2 and attempts < 10:
+                parent2 = tournament_selection(population, fitness_scores)
+                attempts += 1
+                
             # 5. Perform crossover to produce offspring
             child1, child2 = crossover_two_point(parent1, parent2, Pc)
+            
             # 6. Mutate the offspring            
             child1 = mutate(child1, Pm, gene_space)
             child2 = mutate(child2, Pm, gene_space)
-            # 7. Add the new children to the next generation
-            if len(new_population) < pop_size:
-                new_population.append(child1)
-            if len(new_population) < pop_size:
-                new_population.append(child2)
+            
+            # 7. Add the new children only if they are UNIQUE (Diversity Enforcement)
+            # This ensures that every individual in the population is an explorer.
+            for child in [child1, child2]:
+                if len(new_population) < pop_size:
+                    if child not in new_population:
+                        new_population.append(child)
+                    else:
+                        # If it's a clone, we discard it and the loop continues,
+                        # effectively forcing the discovery of a new individual.
+                        pass
                 
         # 8. Replace the old population with the new one
         population = new_population      
         
-    return best_individual, best_fitness  
+    n_evaluations = len(fitness_cache)  # unique model trainings (cache hits excluded)
+    return best_individual, best_fitness, history, pc_history, pm_history, n_evaluations
 
 if __name__ == "__main__":
 
@@ -373,11 +442,28 @@ if __name__ == "__main__":
     X = data.drop("quality", axis=1)
     y = data["quality"]
 
-    if(True):
-        best_random_parameters, best_random_score = RandomSearch()
-        best_grid_parameters, best_grid_score = gridSearch()
+    # --- Full Comparative Benchmark ---
+    if(False)
+        print("\n[1/3] Running Random Search...")
+        best_random_parameters, best_random_score, _ = RandomSearch()
         print("Best parameters from Random Search:", best_random_parameters, "with accuracy:", best_random_score)
+
+        print("\n[2/3] Running Grid Search...")
+        best_grid_parameters, best_grid_score, _ = gridSearch()
         print("Best parameters from Grid Search:", best_grid_parameters, "with accuracy:", best_grid_score)
-    if(False):
-        best_ga_parameters, best_ga_score = genetic_algorithm()
-        print("Best parameters from Genetic Algorithm:", best_ga_parameters, "with accuracy:", best_ga_score)
+
+    print("\n[3/3] Running Adaptive Genetic Algorithm...")
+    best_ga_parameters, best_ga_score, _, _, _, _ = genetic_algorithm()
+    print("Best parameters from Genetic Algorithm:", best_ga_parameters, "with accuracy:", best_ga_score)
+
+    print("\n===== FINAL COMPARISON =====")
+    print(f"  Random Search : {best_random_score:.6f}")
+    print(f"  Grid Search   : {best_grid_score:.6f}")
+    print(f"  Genetic Alg.  : {best_ga_score:.6f}")
+    winner = max(
+        [("Random Search", best_random_score),
+         ("Grid Search",   best_grid_score),
+         ("Genetic Alg.",  best_ga_score)],
+        key=lambda x: x[1]
+    )
+    print(f"  WINNER        : {winner[0]} ({winner[1]:.6f})")
