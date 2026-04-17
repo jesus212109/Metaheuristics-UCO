@@ -1,0 +1,571 @@
+\documentclass[12pt, a4paper]{article}
+
+% Encoding and Language
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+
+% Page Layout
+\usepackage[a4paper, margin=2.5cm]{geometry}
+
+% Typography
+\usepackage{microtype}
+\usepackage[parfill]{parskip}
+
+% Math
+\usepackage{amsmath}
+\usepackage{amssymb}
+
+% Graphics and Floats
+\usepackage{graphicx}
+\usepackage{float}
+
+% Tables
+\usepackage{booktabs}
+
+% Lists
+\usepackage{enumitem}
+
+% Colors
+\usepackage[dvipsnames]{xcolor}
+
+% Code Snippets
+\usepackage{listings}
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false, breaklines=true, captionpos=b,
+    keepspaces=true, numbers=left, numbersep=5pt,
+    showspaces=false, showstringspaces=false, showtabs=false, tabsize=2
+}
+\lstset{style=mystyle}
+
+% Hyperlinks and PDF Metadata
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks = true,
+    linkcolor  = MidnightBlue,
+    citecolor  = MidnightBlue,
+    urlcolor   = MidnightBlue,
+    pdftitle   = {Practical Report 3: Talk Allocation with CHC Metaheuristic},
+    pdfauthor  = {Jesús Fernández López and Rafael Carlos Schoettel Vilchez},
+    pdfsubject = {Metaheuristics},
+    pdfkeywords= {CHC metaheuristic HUX crossover talk allocation school assignment},
+}
+
+% Global Settings
+\widowpenalty=10000
+\clubpenalty=10000
+\frenchspacing
+
+\newcommand{\reporttitle}{Practical Assignment 3: Talk Allocation\\[0.3cm]
+\large using a CHC Metaheuristic}
+\newcommand{\reportdate}{\today}
+\newcommand{\authorA}{Jesús Fernández López}
+\newcommand{\authorB}{Rafael Carlos Schoettel Vilchez}
+
+\begin{document}
+
+\begin{titlepage}
+  \centering
+  \vspace*{3cm}
+  {\Huge \textbf{Practical Assignment Report}}\\[0.8cm]
+  {\LARGE \textbf{\reporttitle}}\\[0.5cm]
+  \rule{\textwidth}{0.4pt}\\[2cm]
+  {\Large \textbf{Authors}}\\[0.4cm]
+  {\large \authorA\ \& \authorB}\\[1.5cm]
+  {\Large \textbf{Subject}}\\[0.4cm]
+  {\large Metaheuristics}\\[0.4cm]
+  {\normalsize University of Córdoba}\\[1.5cm]
+  {\Large \textbf{Date}}\\[0.4cm]
+  {\large \reportdate}
+  \vfill
+  \rule{\textwidth}{0.4pt}
+\end{titlepage}
+
+\newpage
+\tableofcontents
+\newpage
+
+% ============================================================
+\section{Problem Analysis}
+% ============================================================
+
+\subsection{Context and Motivation}
+
+Every year, to celebrate the \textit{International Day of Women and Girls in Science}
+(February 11\textsuperscript{th}), the University of Córdoba organises a programme of
+scientific outreach talks at local schools. Schools from the city and the surrounding
+province submit requests specifying the educational level and preferred topic of the
+desired talk. At the same time, researchers volunteer to deliver talks within their
+area of expertise, subject to constraints on travel and educational level.
+
+Once both sets of requests are received, a coordinator must match talks to researchers.
+The matching must satisfy hard feasibility requirements while optimising a set of
+priority-based soft objectives. The number of researchers $R$ and the number of
+requested talks $T$ vary each year, producing two qualitatively different regimes that
+the algorithm must handle transparently.
+
+\subsection{Formal Problem Definition}
+
+\subsubsection{Sets and Parameters}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{cl}
+  \toprule
+  \textbf{Symbol} & \textbf{Definition} \\
+  \midrule
+  $T$ & Total number of talks requested by schools \\
+  $E$ & Total number of schools \\
+  $R$ & Total number of researchers \\
+  $\mathcal{T} = \{t_0, \ldots, t_{T-1}\}$ & Set of requested talks \\
+  $\mathcal{S} = \{s_1, \ldots, s_E\}$     & Set of schools \\
+  $\mathcal{R} = \{r_1, \ldots, r_R\}$     & Set of researchers \\
+  \bottomrule
+\end{tabular}
+\end{center}
+
+\subsubsection{Entity Attributes}
+
+Each \textbf{school} $s \in \mathcal{S}$ is characterised by:
+\begin{itemize}[itemsep=0.1em]
+  \item $\text{loc}(s) \in \{\text{city}, \text{province}\}$ — geographical location.
+  \item $\text{disadv}(s) \in \{0,1\}$ — whether $s$ is in a disadvantaged area.
+  \item $\text{type}(s) \in \{\text{public}, \text{concerted}, \text{private}\}$ — institution type.
+  \item $\text{new}(s) \in \{0,1\}$ — whether $s$ participates for the first time.
+\end{itemize}
+
+Each \textbf{talk request} $t \in \mathcal{T}$ carries:
+\begin{itemize}[itemsep=0.1em]
+  \item $\text{school}(t) \in \mathcal{S}$ — the requesting school.
+  \item $\text{topic}(t) \in \mathcal{K} \cup \{\text{any}\}$ — required topic ($\mathcal{K}$
+        is the set of known disciplines; ``any'' means no restriction).
+  \item $\text{level}(t) \in \mathcal{L}$ — required educational level
+        (preschool, primary, secondary, high school, or vocational training).
+\end{itemize}
+
+Each \textbf{researcher} $r \in \mathcal{R}$ is described by:
+\begin{itemize}[itemsep=0.1em]
+  \item $\text{topic}(r) \in \mathcal{K}$ — area of expertise.
+  \item $\text{level}(r) \in \mathcal{L}$ — preferred educational level.
+  \item $\text{travel}(r) \in \{0,1\}$ — whether $r$ can travel outside the city.
+  \item $\text{newR}(r) \in \{0,1\}$ — first year participating.
+  \item $\text{prevProv}(r) \in \{0,1\}$ — gave a talk in the province last year.
+  \item $\text{prevSchool}(r) \in \mathcal{S} \cup \{\varnothing\}$ — school visited last year.
+  \item $\text{maxTalks}(r) \in \{1, 2\}$ — maximum talks $r$ is willing to give.
+\end{itemize}
+
+\subsubsection{Decision Variable}
+
+The problem is equivalent to a \textbf{Generalised Assignment Problem} (GAP). The
+decision variable is an assignment function:
+\begin{equation}
+  x : \mathcal{T} \to \mathcal{R} \cup \{-1\}
+\end{equation}
+where $x(t) = r$ means talk $t$ is assigned to researcher $r$, and $x(t) = -1$
+means talk $t$ is left unassigned.
+
+\subsubsection{Hard Constraints}
+
+\begin{enumerate}[label=\textbf{HC\arabic*.}, leftmargin=3em, itemsep=0.3em]
+  \item \textbf{Topic compatibility:} $\text{topic}(t) = \text{any}$ \,\textit{or}\,
+        $\text{topic}(r) = \text{topic}(t)$, for all assigned $(t, r)$.
+  \item \textbf{Level compatibility:} $\text{level}(r) = \text{level}(t)$, for all
+        assigned $(t, r)$.
+  \item \textbf{Coverage when $R \geq T$:} Every school $s$ must have at least one
+        assigned talk: $\exists\, t\!:\,\text{school}(t)=s,\;x(t)\neq -1$.
+  \item \textbf{Location feasibility:} If $\text{loc}(\text{school}(t)) = \text{province}$
+        then $\text{travel}(x(t)) = 1$.
+  \item \textbf{Capacity:} $|\{t : x(t) = r\}| \leq \text{maxTalks}(r)$ for all $r$.
+\end{enumerate}
+
+\subsubsection{Soft Constraints (Priorities)}
+
+When $T > R$ (insufficient researchers), schools are prioritised in the following order:
+\begin{enumerate}[label=\arabic*., itemsep=0.1em]
+  \item School participates for the first time.
+  \item School is located in the province.
+  \item School is in a disadvantaged area.
+  \item School is a public institution.
+  \item School is concerted.
+  \item School is private (lowest priority).
+\end{enumerate}
+
+When $R > T$ (surplus researchers), researchers are prioritised:
+\begin{enumerate}[label=\arabic*., itemsep=0.1em]
+  \item Researcher participates for the first time.
+  \item Researcher can travel to the province.
+\end{enumerate}
+
+Additional historical soft constraints:
+\begin{itemize}[itemsep=0.1em]
+  \item Researcher who was in the province last year should preferably go to the city.
+  \item Researcher should preferably not revisit the same school as last year.
+\end{itemize}
+
+% ============================================================
+\section{Design Decisions}
+% ============================================================
+
+\subsection{Chromosome Representation}
+
+We encode a solution as a one-dimensional integer array of length $T$:
+\begin{equation}
+  \mathbf{c} = [c_0,\, c_1,\, \ldots,\, c_{T-1}], \quad c_i \in \{-1,\, 0,\, \ldots,\, R-1\}
+\end{equation}
+
+Position $i$ of the chromosome corresponds to talk $t_i$. The value $c_i$ is the
+\emph{index} of the researcher assigned to that talk (or $-1$ for unassigned). This
+\textbf{direct encoding} has several desirable properties:
+\begin{itemize}[itemsep=0.1em]
+  \item Compact representation: $T$ genes, each with at most $R+1$ possible values.
+  \item Simple crossover: any valid gene-level operator is applicable.
+  \item Transparent decoding: solution quality is immediately readable from the array.
+\end{itemize}
+
+\subsection{Preprocessing: Valid Researchers per Talk}
+
+Before launching the metaheuristic, we pre-compute for each talk $t$ the set
+$V(t)$ of researchers that can feasibly cover it (stored as a Python dictionary
+called \texttt{valid\_r\-es\-ear\-chers\_per\_talk}):
+\begin{align}
+  V(t) = \{\, r \in \mathcal{R} \mid\;
+            &(\text{topic}(t) = \text{any} \lor \text{topic}(r) = \text{topic}(t))\nonumber\\
+            &\land\; \text{level}(r) = \text{level}(t)\nonumber\\
+            &\land\; (\text{loc}(\text{school}(t)) = \text{city} \lor \text{travel}(r) = 1)
+            \,\}\nonumber
+\end{align}
+
+This \textbf{mandatory preprocessing step}:
+\begin{itemize}[itemsep=0.1em]
+  \item Enforces hard constraints HC1–HC4 \emph{before} the search begins, drastically
+        reducing the effective search space.
+  \item Speeds up initialisation: random chromosomes are built by sampling from $V(t)$,
+        producing feasible or near-feasible individuals from generation 0.
+  \item Makes the fitness function lighter: constraint HC1–HC4 violations can be detected
+        in $O(1)$ using the precomputed set.
+\end{itemize}
+
+Talks for which $V(t) = \varnothing$ are inherently infeasible; such genes are set to
+$-1$ and are never modified by crossover or mutation.
+
+\begin{lstlisting}[language=Python, caption={Preprocessing: building the valid researchers dictionary}]
+def build_valid_researchers_per_talk(talks, researchers, schools):
+    valid = {}
+    for talk in talks:
+        school = schools[talk.school_id]
+        candidates = []
+        for r in researchers.values():
+            # Hard constraint 1: topic match
+            if talk.topic != "any" and r.topic != talk.topic:
+                continue
+            # Hard constraint 2: level match
+            if r.level != talk.level:
+                continue
+            # Hard constraint 3: travel feasibility
+            if school.location == "province" and not r.can_travel:
+                continue
+            candidates.append(r.researcher_id)
+        valid[talk.talk_id] = candidates
+    return valid
+\end{lstlisting}
+
+% ============================================================
+\section{Fitness Function}
+% ============================================================
+
+\subsection{Minimisation Approach}
+
+The fitness function measures the \emph{total penalty} of a chromosome. Following a
+minimisation paradigm, a perfect solution has $f(\mathbf{c}) = 0$, and each
+unsatisfied constraint contributes a positive penalty proportional to its weight:
+
+\begin{equation}
+  f(\mathbf{c}) = \underbrace{\sum_{k} w_k^{\text{hard}} \cdot \delta_k^{\text{hard}}(\mathbf{c})}_{\text{hard penalties}}
+  \;+\;
+  \underbrace{\sum_{k} w_k^{\text{soft}} \cdot \delta_k^{\text{soft}}(\mathbf{c})}_{\text{soft penalties}}
+\end{equation}
+
+where $\delta_k(\mathbf{c}) \in \{0,1,\mathbb{Z}^+\}$ counts violations of constraint $k$.
+
+\subsection{Modular Penalty Architecture}
+
+Each constraint class has its own function, collecting penalties independently and
+summing them. This modularity simplifies testing, enables weight tuning, and allows
+constraints to be enabled or disabled individually.
+
+\subsubsection{Hard Constraint Penalties}
+
+\renewcommand{\arraystretch}{1.3}
+\begin{table}[H]
+  \centering
+  \caption{Hard constraint penalties and default weights.}
+  \label{tab:hard_penalties}
+  \resizebox{\textwidth}{!}{%
+  \begin{tabular}{llc}
+    \toprule
+    \textbf{Violation} & \textbf{Description} & \textbf{Default Weight} \\
+    \midrule
+    School without talk ($R \geq T$) & A school receives zero talks when there are enough researchers & $1{,}000{,}000$ \\
+    Location mismatch & Researcher without travel clearance assigned to a province school & $1{,}000{,}000$ \\
+    Overallocation & Researcher assigned more talks than their \texttt{maxTalks} limit & $1{,}000{,}000$ \\
+    \bottomrule
+  \end{tabular}}
+\end{table}
+\renewcommand{\arraystretch}{1}
+
+Setting hard penalties to $10^6$ ensures that any feasible solution — even one that
+satisfies no soft constraint — outranks any infeasible solution.
+
+\subsubsection{Soft Constraint Penalties}
+
+\renewcommand{\arraystretch}{1.3}
+\begin{table}[H]
+  \centering
+  \caption{Soft constraint penalties, their context, and default weights.}
+  \label{tab:soft_penalties}
+  \resizebox{\textwidth}{!}{%
+  \begin{tabular}{llc}
+    \toprule
+    \textbf{Violation} & \textbf{Description} & \textbf{Default Weight} \\
+    \midrule
+    First-year school unserved    & School in its first year receives no talk          & 500 \\
+    Province school unserved      & Province school receives no talk ($T > R$)         & 300 \\
+    Disadvantaged area unserved   & Disadvantaged school receives no talk              & 400 \\
+    Public school unserved        & Public institution receives no talk                & 200 \\
+    Concerted school unserved     & Concerted school receives no talk                  & 100 \\
+    First-year researcher unused  & New researcher not selected ($R > T$)              & 200 \\
+    Traveller unused in province  & Travelling researcher not used for province ($R > T$) & 150 \\
+    Same school as last year      & Researcher revisits their school from last year    & 300 \\
+    Same province as last year    & Province researcher goes to province again         & 150 \\
+    \bottomrule
+  \end{tabular}}
+\end{table}
+\renewcommand{\arraystretch}{1}
+
+\subsection{Configuration Dictionary}
+
+All weights are collected in a single Python dict (\texttt{DEFAULT\_CONFIG}).
+This makes the fitness function \emph{fully configurable}: a user can pass a custom
+dict to \texttt{compute\_fitness()} to reflect different institutional priorities without
+modifying any source code.
+
+\begin{lstlisting}[language=Python, caption={Configurable weight dictionary}]
+DEFAULT_CONFIG = {
+    # Hard constraints
+    "w_school_no_talk":     1_000_000,
+    "w_location_mismatch":  1_000_000,
+    "w_overallocation":     1_000_000,
+    # Soft: unserved schools
+    "w_first_year_school":  500,
+    "w_province_school":    300,
+    "w_disadvantaged":      400,
+    "w_public_institution": 200,
+    "w_concerted":          100,
+    # Soft: unused researchers (R > T regime)
+    "w_first_year_researcher": 200,
+    "w_travel_researcher":     150,
+    # Soft: historical
+    "w_same_school_as_last_year":   300,
+    "w_same_province_as_last_year": 150,
+}
+\end{lstlisting}
+
+% ============================================================
+\section{Metaheuristic Logic}
+% ============================================================
+
+\subsection{Overview of CHC}
+
+CHC (Cross-generational elitist selection, Heterogeneous recombination, Cataclysmic
+mutation) is an evolutionary algorithm proposed by Eshelman (1991) that combines
+aggressive elitism with operators designed to maintain population diversity. Its
+three defining mechanisms are:
+\begin{enumerate}[itemsep=0.2em]
+  \item \textbf{Cross-generational elitism (C):} All individuals — old and new — compete
+        for survival; only the best $N_p$ are kept.
+  \item \textbf{HUX crossover (H):} A specialised operator that maximises diversity in
+        offspring while preserving strong genes from both parents.
+  \item \textbf{Cataclysmic restart (C):} When the population has converged completely,
+        a controlled restart diversifies around the best individual.
+\end{enumerate}
+
+Unlike standard GAs, CHC uses \emph{no mutation during the main loop}. Instead,
+incest prevention prevents premature convergence, and the restart provides macro-level
+diversity when the incest threshold reaches zero.
+
+\subsection{HUX Crossover}
+
+The Half-Uniform Crossover operator is the core recombination method in CHC. Given
+two parents $\mathbf{p}_1$ and $\mathbf{p}_2$, HUX:
+\begin{enumerate}[itemsep=0.1em]
+  \item Identifies the set $D$ of positions where $p_1$ and $p_2$ differ:
+        $D = \{i : c_i^{(1)} \neq c_i^{(2)}\}$.
+  \item Randomly selects exactly $\lfloor |D|/2 \rfloor$ positions from $D$ to swap.
+  \item Produces two offspring $\mathbf{c}_1$, $\mathbf{c}_2$ by exchanging the
+        selected genes between parents.
+\end{enumerate}
+
+\begin{equation}
+  |D(\mathbf{c}_1, \mathbf{c}_2)| = |D(\mathbf{c}_1, \mathbf{p}_1)|
+  = |D(\mathbf{c}_2, \mathbf{p}_2)|
+  = \left\lfloor \frac{|D(\mathbf{p}_1, \mathbf{p}_2)|}{2} \right\rfloor
+\end{equation}
+
+This property guarantees that each offspring is exactly halfway between the two parents
+in Hamming space, which is the furthest apart they can be while each carrying a mix of
+both parents. HUX maximises exploration among the offspring of a given pair.
+
+\begin{lstlisting}[language=Python, caption={HUX crossover implementation}]
+def hux_crossover(parent1, parent2):
+    diff_positions = [i for i, (a, b) in enumerate(zip(parent1, parent2)) if a != b]
+    if len(diff_positions) < 2:
+        return copy.copy(parent1), copy.copy(parent2)
+    half = len(diff_positions) // 2
+    swap_positions = set(random.sample(diff_positions, half))
+    child1, child2 = copy.copy(parent1), copy.copy(parent2)
+    for pos in swap_positions:
+        child1[pos], child2[pos] = child2[pos], child1[pos]
+    return child1, child2
+\end{lstlisting}
+
+\subsection{Incest Prevention and the Hamming Distance Threshold}
+
+A key feature of CHC is the \textbf{incest prevention} mechanism. Two individuals are
+only allowed to mate if their Hamming distance exceeds a dynamic threshold $d$:
+
+\begin{equation}
+  d_H(\mathbf{p}_1, \mathbf{p}_2) = \sum_{i=0}^{T-1} \mathbf{1}[c_i^{(1)} \neq c_i^{(2)}] > d
+\end{equation}
+
+The threshold $d$ is initialised to $\lfloor T/4 \rfloor$ and decreases by 1 each
+generation in which no offspring improves over both parents. This progressive relaxation
+allows the algorithm to increase mating pressure as the population converges, eventually
+reaching all pairs.
+
+\textbf{Elitist replacement:} Children only enter the population if they strictly
+improve over at least one of their parents. This cross-generational competition ensures
+monotonic improvement: the best fitness never decreases.
+
+\subsection{Cataclysmic Restart}
+
+When $d$ reaches $0$ and no crossover produces improvements, the population has
+converged. Rather than terminating, CHC performs a \textbf{cataclysmic restart}:
+
+\begin{enumerate}[itemsep=0.1em]
+  \item The current best individual (the \emph{survivor}) is copied unchanged.
+  \item The remaining $N_p - 1$ individuals are created by randomly mutating exactly
+        $\lfloor \mu \cdot T \rfloor$ genes of the survivor ($\mu = 35\%$ by default).
+  \item Each mutated gene is replaced by a valid researcher drawn uniformly from
+        $V(t)$ for that position.
+  \item The Hamming threshold is reset to $\lfloor T/4 \rfloor$.
+\end{enumerate}
+
+This restart is \emph{controlled}: the best solution is never lost, but the population
+is aggressively diversified around it, enabling further exploration in new regions.
+
+\begin{lstlisting}[language=Python, caption={Cataclysmic restart}]
+def cataclysmic_mutation(best, pop_size, mutation_rate, talks, valid_map, r_id_list):
+    new_population = [copy.copy(best)]
+    n_mutate = max(1, int(mutation_rate * len(talks)))
+    for _ in range(pop_size - 1):
+        mutant = copy.copy(best)
+        positions = random.sample(range(len(talks)), n_mutate)
+        for pos in positions:
+            mutant[pos] = repair_gene(pos, valid_map, r_id_list)
+        new_population.append(mutant)
+    return new_population
+\end{lstlisting}
+
+\subsection{Algorithm Flow}
+
+Algorithm~\ref{alg:chc} summarises the complete CHC loop.
+
+\begin{figure}[H]
+\centering
+\begin{minipage}{0.92\textwidth}
+\begin{lstlisting}[language=Python, caption={CHC main loop (simplified)}, label={alg:chc}]
+threshold = T // 4
+population = initialise_population(pop_size)
+while generation < max_generations:
+    shuffle(population)
+    pairs = [(pop[i], pop[i+1]) for i in range(0, pop_size-1, 2)]
+    new_individuals = []
+    for p1, p2 in pairs:
+        if hamming(p1, p2) > threshold:
+            c1, c2 = hux_crossover(p1, p2)
+            if fitness(c1) < min(fitness(p1), fitness(p2)):
+                new_individuals.append(c1)
+            if fitness(c2) < min(fitness(p1), fitness(p2)):
+                new_individuals.append(c2)
+    if new_individuals:
+        merge and keep top pop_size individuals   # cross-generational elitism
+    else:
+        threshold -= 1                            # tighten incest threshold
+    if threshold <= 0:
+        population = cataclysmic_restart(best)   # reset around best
+        threshold = T // 4
+    generation += 1
+\end{lstlisting}
+\end{minipage}
+\end{figure}
+
+\subsection{Parameter Configuration}
+
+\renewcommand{\arraystretch}{1.3}
+\begin{table}[H]
+  \centering
+  \caption{CHC hyperparameters used in this implementation.}
+  \label{tab:params}
+  \begin{tabular}{lcc}
+    \toprule
+    \textbf{Parameter} & \textbf{Symbol} & \textbf{Default Value} \\
+    \midrule
+    Population size        & $N_p$  & 50 \\
+    Maximum generations    & $G$    & 200 \\
+    Initial threshold      & $d_0$  & $\lfloor T/4 \rfloor$ \\
+    Restart mutation rate  & $\mu$  & 35\% \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+\renewcommand{\arraystretch}{1}
+
+The choice of $\mu = 35\%$ follows Eshelman's recommendation: too small a mutation
+produces restarts that are virtually identical to the best, while too large a value
+effectively discards the best solution's genetic information.
+
+% ============================================================
+\section{Conclusions}
+% ============================================================
+
+This practice addressed the \textbf{Talk Allocation Problem} as a Generalised
+Assignment Problem with one hard categorical constraint per dimension (topic,
+level, location) and a rich set of lexicographic soft priorities. The CHC
+metaheuristic was selected because it naturally balances intense elitism with
+controlled diversity preservation, without relying on hand-tuned mutation
+probabilities during the main evolutionary loop.
+
+The modular penalty architecture allows practitioners at the University of Córdoba
+to adjust the relative importance of each priority rule — for example, giving more
+weight to disadvantaged areas in a particular year — without touching the algorithm's
+source code.
+
+The mandatory preprocessing phase (\texttt{valid\_researchers\_per\_talk}) reduces
+feasibility enforcement to an $O(1)$ lookup during fitness evaluation, making the
+algorithm scalable to larger real-world instances with hundreds of talks and researchers.
+
+Future work could introduce a \emph{repair operator} that, whenever a child violates a
+hard constraint on a gene, replaces that gene with a draw from $V(t)$ before
+evaluating fitness. This would further accelerate convergence by keeping the
+population closer to the feasible region at all times.
+
+\end{document}
